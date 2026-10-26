@@ -1,11 +1,15 @@
 import cv2
 from ultralytics import YOLO
 
-# Load the small YOLO model
-model = YOLO("yolo11n.pt")
+# Two models: one for normal vehicles, one for ambulances
+vehicle_model = YOLO("yolov8n.pt")
+ambulance_model = YOLO("best.pt")
+print(ambulance_model.names)
 
-# Only these YOLO classes count as vehicles
+# Only these YOLO classes count as vehicles (for yolov8n.pt)
 VEHICLES = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+
+AMBULANCE_CONF = 0.75   # raise to reduce false alarms, lower to catch more
 
 # Open the input video and read its size and speed
 cap = cv2.VideoCapture("traffic.mp4")
@@ -24,9 +28,8 @@ while cap.isOpened() and frame_no < max_frames:
     if not ok:
         break
 
-    # Run YOLO on this one frame
-    results = model(frame, verbose=False)[0]
-
+    # 1) Normal vehicles
+    results = vehicle_model(frame, verbose=False)[0]
     count = 0
     for box in results.boxes:
         cls = int(box.cls[0])
@@ -37,9 +40,26 @@ while cap.isOpened() and frame_no < max_frames:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
             count += 1
 
-    # Show the vehicle count on the frame
+    # 2) Ambulances (class name "Ambulance" in best.pt)
+    amb_results = ambulance_model(frame, conf=AMBULANCE_CONF, verbose=False)[0]
+    ambulance_count = 0
+    for box in amb_results.boxes:
+        cls = int(box.cls[0])
+        if ambulance_model.names[cls] != "Ambulance":
+            continue  # ignore "Misc Vehicle", it is not reliable yet
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        conf = float(box.conf[0])
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+        cv2.putText(frame, f"AMBULANCE {conf:.2f}", (x1, max(y1 - 10, 20)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        ambulance_count += 1
+
+    # Show the counts on the frame
     cv2.putText(frame, f"Vehicles: {count}", (20, 40),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    if ambulance_count:
+        cv2.putText(frame, f"AMBULANCE DETECTED ({ambulance_count})", (20, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
     out.write(frame)
     frame_no += 1
