@@ -4,3 +4,5 @@
 negatives/
 venv/
 tempCodeRunnerFile.py
+__pycache__/
+negatives.zip
